@@ -97,7 +97,7 @@ def compute_cost(Zf, Y):
     return cost
 
 
-def model(X_train, Y_train, X_test, Y_test, learning_rate=0.0001,
+def model(X_train, Y_train, X_test, Y_test, learning_rate=0.0009,
           num_epochs=1000, minibatch_size=64, print_cost=True):
 
     ops.reset_default_graph()  # to be able to rerun the model without overwriting tf variables
