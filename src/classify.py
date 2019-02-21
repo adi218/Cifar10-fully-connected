@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 import sys
+from scipy import misc
+
 
 def random_mini_batches(X, Y, mini_batch_size=64, seed=0):
     m = X.shape[1]  # number of training examples
@@ -97,7 +99,7 @@ def compute_cost(Zf, Y):
     return cost
 
 
-def model(X_train, Y_train, X_test, Y_test, learning_rate=0.0006,
+def model(X_train, Y_train, X_test, Y_test, op, file=None, learning_rate=0.0006,
           num_epochs=1000, minibatch_size=64, print_cost=True):
 
     ops.reset_default_graph()  # to be able to rerun the model without overwriting tf variables
@@ -126,58 +128,75 @@ def model(X_train, Y_train, X_test, Y_test, learning_rate=0.0006,
 
     # Initialize all the variables
     init = tf.global_variables_initializer()
+
+    #Initialize saver
     saver = tf.train.Saver()
+
     # Start the session to compute the tensorflow graph
     with tf.Session() as sess:
+        if op == 'train':
+            # Run the initialization
+            sess.run(init)
 
-        # Run the initialization
-        sess.run(init)
+            # Do the training loop
+            for epoch in range(num_epochs):
 
-        # Do the training loop
-        for epoch in range(num_epochs):
+                epoch_cost = 0.  # Defines a cost related to an epoch
+                validation_cost = 0
+                num_minibatches = int(m / minibatch_size)  # number of minibatches of size minibatch_size in the train set
+                seed = seed + 1
+                minibatches = random_mini_batches(X_train, Y_train, minibatch_size, seed)
 
-            epoch_cost = 0.  # Defines a cost related to an epoch
-            validation_cost = 0
-            num_minibatches = int(m / minibatch_size)  # number of minibatches of size minibatch_size in the train set
-            seed = seed + 1
-            minibatches = random_mini_batches(X_train, Y_train, minibatch_size, seed)
+                for minibatch in minibatches:
+                    # Select a minibatch
+                    (minibatch_X, minibatch_Y) = minibatch
 
-            for minibatch in minibatches:
-                # Select a minibatch
-                (minibatch_X, minibatch_Y) = minibatch
+                    # Run the session to execute the "optimizer" and the "cost", the feedict should contain a minibatch for (X,Y).
+                    _, minibatch_cost = sess.run([optimizer, cost], feed_dict={X: minibatch_X, Y: minibatch_Y, keep_prob:0.8})
 
-                # Run the session to execute the "optimizer" and the "cost", the feedict should contain a minibatch for (X,Y).
-                _, minibatch_cost = sess.run([optimizer, cost], feed_dict={X: minibatch_X, Y: minibatch_Y, keep_prob:0.8})
+                    epoch_cost += minibatch_cost / num_minibatches
+                minibatch_validation_cost = sess.run(cost, feed_dict={X: X_test, Y: Y_test, keep_prob: 0.8})
+                validation_cost += minibatch_validation_cost
+                # Print the cost every epoch
+                if print_cost == True and epoch % 100 == 0:
+                    train_summary(epoch, epoch_cost, validation_cost, Zf, X, Y, X_train, Y_train, X_test, Y_test, keep_prob)
+                if print_cost == True and epoch % 5 == 0:
+                    costs.append(epoch_cost)
+            saver.save(sess, 'model')
+            # plot the cost
+            plt.plot(np.squeeze(costs))
+            plt.ylabel('cost')
+            plt.xlabel('iterations (per tens)')
+            plt.title("Learning rate =" + str(learning_rate))
+            plt.show()
 
-                epoch_cost += minibatch_cost / num_minibatches
-            minibatch_validation_cost = sess.run(cost, feed_dict={X: X_test, Y: Y_test, keep_prob: 0.8})
-            validation_cost += minibatch_validation_cost
-            # Print the cost every epoch
-            if print_cost == True and epoch % 100 == 0:
-                train_summary(epoch, epoch_cost, validation_cost, Zf, X, Y, X_train, Y_train, X_test, Y_test, keep_prob)
-            if print_cost == True and epoch % 5 == 0:
-                costs.append(epoch_cost)
-        saver.save(sess, 'model')
-        # plot the cost
-        plt.plot(np.squeeze(costs))
-        plt.ylabel('cost')
-        plt.xlabel('iterations (per tens)')
-        plt.title("Learning rate =" + str(learning_rate))
-        plt.show()
+            # lets save the parameters in a variable
+            parameters = sess.run(parameters)
+            print("Parameters have been trained!")
 
-        # lets save the parameters in a variable
-        parameters = sess.run(parameters)
-        print("Parameters have been trained!")
+            # Calculate the correct predictions
+            correct_prediction = tf.equal(tf.argmax(Zf), tf.argmax(Y))
+            # Calculate accuracy on the test set
+            accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
 
-        # Calculate the correct predictions
-        correct_prediction = tf.equal(tf.argmax(Zf), tf.argmax(Y))
-        # Calculate accuracy on the test set
-        accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
+            print("Train Accuracy:", accuracy.eval({X: X_train, Y: Y_train, keep_prob:1}))
+            print("Test Accuracy:", accuracy.eval({X: X_test, Y: Y_test, keep_prob:1}))
 
-        print("Train Accuracy:", accuracy.eval({X: X_train, Y: Y_train, keep_prob:1}))
-        print("Test Accuracy:", accuracy.eval({X: X_test, Y: Y_test, keep_prob:1}))
+            return parameters
+        else:
+            label_dic = {0: 'airplane', 1: 'automobile', 2: 'bird', 3: 'cat', 4: 'deer', 5: 'dog', 6: 'frog',
+                         7: 'horse', 8: 'ship', 9: 'truck'}
 
-        return parameters
+            #Load model
+            img = misc.imread(file)
+            if not img.shape == (32, 32, 3):
+                print("shape_issue")
+            else:
+                img = img.reshape((3072, 1))
+                saver.restore(sess, "model")
+                print(label_dic[sess.run(tf.argmax(Zf), feed_dict={X: img, keep_prob:1})[0]])
+
+
 
 
 def train_summary(epoch, epoch_cost, validation_cost, Zf, X, Y, X_train, Y_train, X_test, Y_test, keep_prob):
@@ -210,19 +229,23 @@ def one_hot_matrix(labels, C):
     return one_hot
 
 
-p = Preprocessor()
-X_train, labels_train, X_test, labels_test = p.load_data()
-Y_train = one_hot_matrix(labels=labels_train, C=10)
-Y_test = one_hot_matrix(labels=labels_test, C=10)
+def trainer(op, file):
 
-X_train = X_train.T/255
-X_test = X_test.T/255
+    p = Preprocessor()
+    X_train, labels_train, X_test, labels_test = p.load_data()
+    Y_train = one_hot_matrix(labels=labels_train, C=10)
+    Y_test = one_hot_matrix(labels=labels_test, C=10)
 
-model(X_train, Y_train, X_test, Y_test)
+    X_train = X_train.T / 255
+    X_test = X_test.T / 255
+
+    model(X_train, Y_train, X_test, Y_test, op, file)
 
 
 def main(args):
+    op = args[0]
     file = args[1]
+    trainer(op, file)
 
 
 if __name__ == "__main__":
