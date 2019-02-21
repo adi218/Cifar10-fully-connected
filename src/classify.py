@@ -4,7 +4,7 @@ from Preprocessor import Preprocessor
 import matplotlib.pyplot as plt
 import numpy as np
 import math
-
+import sys
 
 def random_mini_batches(X, Y, mini_batch_size=64, seed=0):
     m = X.shape[1]  # number of training examples
@@ -219,6 +219,14 @@ X_train = X_train.T/255
 X_test = X_test.T/255
 
 model(X_train, Y_train, X_test, Y_test)
+
+
+def main(args):
+    file = args[1]
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
 
 
 
