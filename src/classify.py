@@ -47,13 +47,18 @@ def create_placeholders(n_x, n_y):
 
 def initialize_parameters():
 
+
     W1 = tf.get_variable("W1", [25, 3072], initializer=tf.contrib.layers.xavier_initializer())
+    # to add to regularizer
+    # tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, W1)
     b1 = tf.get_variable("b1", [25, 1], initializer=tf.zeros_initializer())
     W2 = tf.get_variable("W2", [30, 25], initializer=tf.contrib.layers.xavier_initializer())
+    # tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, W2)
     b2 = tf.get_variable("b2", [30, 1], initializer=tf.zeros_initializer())
     # W3 = tf.get_variable("W3", [50, 25], initializer=tf.contrib.layers.xavier_initializer())
     # b3 = tf.get_variable("b3", [50, 1], initializer=tf.zeros_initializer())
     Wf = tf.get_variable("Wf", [10, 30], initializer=tf.contrib.layers.xavier_initializer())
+    # tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, Wf)
     bf = tf.get_variable("bf", [10, 1], initializer=tf.zeros_initializer())
     parameters = {"W1": W1,
                   "b1": b1,
@@ -67,7 +72,7 @@ def initialize_parameters():
     return parameters
 
 
-def forward_propagation(X, parameters, keep_prob):
+def forward_propagation(X, parameters, keep_prob, training):
     W1 = parameters['W1']
     b1 = parameters['b1']
     W2 = parameters['W2']
@@ -79,9 +84,11 @@ def forward_propagation(X, parameters, keep_prob):
 
     Z1 = tf.add(tf.matmul(W1, X), b1)  # Z1 = np.dot(W1, X) + b1
     A1 = tf.nn.relu(Z1)  # A1 = relu(Z1)
+    # A1 = tf.layers.batch_normalization(A1, axis=0, training=training)
     A1 = tf.nn.dropout(A1, keep_prob=keep_prob)
     Z2 = tf.add(tf.matmul(W2, A1), b2)  # Z2 = np.dot(W2, a1) + b2
     A2 = tf.nn.relu(Z2)  # A2 = relu(Z2)
+    # A2 = tf.layers.batch_normalization(A2, axis=0, training=training)
     A2 = tf.nn.dropout(A2, keep_prob=keep_prob)
     # Z3 = tf.add(tf.matmul(W3, A2), b3)  # Z3 = np.dot(W3,Z2) + b3
     # A3 = tf.nn.relu(Z3)  # A3 = relu(Z3)
@@ -90,17 +97,24 @@ def forward_propagation(X, parameters, keep_prob):
     return Zf
 
 
-def compute_cost(Zf, Y):
+def compute_cost(Zf, Y, beta=0.1):
+
+    #regularizer
+    # regularizer = tf.contrib.layers.l2_regularizer(beta)
+    # reg_variables = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+    # reg_term = tf.contrib.layers.apply_regularization(regularizer, reg_variables)
 
     logits = tf.transpose(Zf)
     labels = tf.transpose(Y)
     cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels))
+    # Loss function using L2 Regularization
+    loss = cost
 
-    return cost
+    return loss
 
 
-def model(X_train, Y_train, X_test, Y_test, op, file=None, learning_rate=0.0006,
-          num_epochs=1000, minibatch_size=64, print_cost=True):
+def model(X_train, Y_train, X_test, Y_test, op, file=None, learning_rate=0.002,
+          num_epochs=101, minibatch_size=64, print_cost=True):
 
     ops.reset_default_graph()  # to be able to rerun the model without overwriting tf variables
     tf.set_random_seed(1)  # to keep consistent results
@@ -116,9 +130,10 @@ def model(X_train, Y_train, X_test, Y_test, op, file=None, learning_rate=0.0006,
     parameters = initialize_parameters()
 
     keep_prob = tf.placeholder(tf.float32)
+    training = tf.placeholder(tf.bool)
 
     # Forward propagation: Build the forward propagation in the tensorflow graph
-    Zf = forward_propagation(X, parameters, keep_prob=keep_prob)
+    Zf = forward_propagation(X, parameters, keep_prob=keep_prob, training=training)
 
     # Cost function: Add cost function to tensorflow graph
     cost = compute_cost(Zf, Y)
@@ -152,35 +167,34 @@ def model(X_train, Y_train, X_test, Y_test, op, file=None, learning_rate=0.0006,
                     (minibatch_X, minibatch_Y) = minibatch
 
                     # Run the session to execute the "optimizer" and the "cost", the feedict should contain a minibatch for (X,Y).
-                    _, minibatch_cost = sess.run([optimizer, cost], feed_dict={X: minibatch_X, Y: minibatch_Y, keep_prob:0.8})
+                    _, minibatch_cost = sess.run([optimizer, cost], feed_dict={X: minibatch_X, Y: minibatch_Y, keep_prob:0.8, training:True})
 
                     epoch_cost += minibatch_cost / num_minibatches
-                minibatch_validation_cost = sess.run(cost, feed_dict={X: X_test, Y: Y_test, keep_prob: 0.8})
+                minibatch_validation_cost = sess.run(cost, feed_dict={X: X_test, Y: Y_test, keep_prob: 0.8, training:True})
                 validation_cost += minibatch_validation_cost
                 # Print the cost every epoch
-                if print_cost == True and epoch % 100 == 0:
-                    train_summary(epoch, epoch_cost, validation_cost, Zf, X, Y, X_train, Y_train, X_test, Y_test, keep_prob)
+                train_summary(epoch+1, epoch_cost, validation_cost, Zf, X, Y, X_train, Y_train, X_test, Y_test, keep_prob, training)
                 if print_cost == True and epoch % 5 == 0:
                     costs.append(epoch_cost)
-            saver.save(sess, 'model')
+            saver.save(sess, './model/model')
             # plot the cost
             plt.plot(np.squeeze(costs))
             plt.ylabel('cost')
             plt.xlabel('iterations (per tens)')
             plt.title("Learning rate =" + str(learning_rate))
-            plt.show()
+            # plt.show()
 
             # lets save the parameters in a variable
             parameters = sess.run(parameters)
-            print("Parameters have been trained!")
+            # print("Parameters have been trained!")
 
             # Calculate the correct predictions
             correct_prediction = tf.equal(tf.argmax(Zf), tf.argmax(Y))
             # Calculate accuracy on the test set
             accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
 
-            print("Train Accuracy:", accuracy.eval({X: X_train, Y: Y_train, keep_prob:1}))
-            print("Test Accuracy:", accuracy.eval({X: X_test, Y: Y_test, keep_prob:1}))
+            print("Train Accuracy:", accuracy.eval({X: X_train, Y: Y_train, keep_prob:1, training:False}))
+            print("Test Accuracy:", accuracy.eval({X: X_test, Y: Y_test, keep_prob:1, training:False}))
 
             return parameters
         else:
@@ -193,21 +207,21 @@ def model(X_train, Y_train, X_test, Y_test, op, file=None, learning_rate=0.0006,
                 print("shape_issue")
             else:
                 img = img.reshape((3072, 1))
-                saver.restore(sess, "model")
-                print(label_dic[sess.run(tf.argmax(Zf), feed_dict={X: img, keep_prob:1})[0]])
+                saver.restore(sess, "./model/model")
+                print(label_dic[sess.run(tf.argmax(Zf), feed_dict={X: img, keep_prob:1, training:False})[0]])
 
 
 
 
-def train_summary(epoch, epoch_cost, validation_cost, Zf, X, Y, X_train, Y_train, X_test, Y_test, keep_prob):
+def train_summary(epoch, epoch_cost, validation_cost, Zf, X, Y, X_train, Y_train, X_test, Y_test, keep_prob, training):
 
     # Calculate the correct predictions
     correct_prediction = tf.equal(tf.argmax(Zf), tf.argmax(Y))
     # Calculate accuracy on the test set
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
 
-    train_accuracy = accuracy.eval({X: X_train, Y: Y_train, keep_prob: 1})
-    test_accuracy = accuracy.eval({X: X_test, Y: Y_test, keep_prob: 1})
+    train_accuracy = accuracy.eval({X: X_train, Y: Y_train, keep_prob: 1, training:False})
+    test_accuracy = accuracy.eval({X: X_test, Y: Y_test, keep_prob: 1, training:False})
 
     if epoch == 0:
         print("Loop" + '\t' + "Train Loss" + '\t' + "Train Acc %" + '\t' + "Test Loss" + '\t' + "Test Acc %")
@@ -244,7 +258,9 @@ def trainer(op, file):
 
 def main(args):
     op = args[0]
-    file = args[1]
+    file = None
+    if op == 'test':
+        file = args[1]
     trainer(op, file)
 
 
